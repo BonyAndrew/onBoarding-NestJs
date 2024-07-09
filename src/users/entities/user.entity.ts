@@ -1,0 +1,37 @@
+import { Entity, PrimaryGeneratedColumn, Column, BeforeInsert } from 'typeorm';
+import * as bcrypt from 'bcryptjs';
+
+@Entity({ name: 'users' })
+export class User {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column('text')
+  name: string;
+
+  @Column('text', { nullable: true })
+  email: string;
+
+  @Column('text')
+  password: string;
+
+  @Column({ nullable: true })
+  token: string;
+
+  @Column({ default: false })
+  isValidated: boolean;
+
+  @Column({ nullable: true })
+  resetPasswordToken: string;
+
+  @Column({ nullable: true })
+  resetPasswordTokenExpiration: Date;
+
+  @BeforeInsert()
+  async hashPassword() {
+    this.password = await bcrypt.hash(this.password, 10);
+  }
+
+  // @Column()
+  // expireDate: Date;
+}
