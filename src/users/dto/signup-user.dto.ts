@@ -11,6 +11,5 @@ export class SignUpUserDto {
   @IsString()
   @IsNotEmpty()
   @MinLength(8)
-  @Matches(/[0-9][A-Z]/)
   password: string;
 }

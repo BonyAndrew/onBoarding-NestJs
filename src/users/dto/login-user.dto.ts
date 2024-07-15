@@ -3,11 +3,10 @@ import { IsString, IsNotEmpty, MinLength, Matches, IsEmail } from 'class-validat
 export class LoginUserDto {
   @IsString()
   @IsNotEmpty()
-  name: string;
+  email: string;
 
   @IsString()
   @IsNotEmpty()
   @MinLength(8)
-  @Matches(/^(^=.*[0-9][A-Z])/)
   password: string;
 }

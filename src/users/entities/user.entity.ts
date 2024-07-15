@@ -9,13 +9,13 @@ export class User {
   @Column('text')
   name: string;
 
-  @Column('text', { nullable: true })
+  @Column('text')
   email: string;
 
-  @Column('text')
+  @Column({ nullable: false })
   password: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true }) 
   token: string;
 
   @Column({ default: false })
@@ -31,7 +31,4 @@ export class User {
   async hashPassword() {
     this.password = await bcrypt.hash(this.password, 10);
   }
-
-  // @Column()
-  // expireDate: Date;
 }

@@ -9,10 +9,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
       port: 5432,
       username: 'postgres',
       password: 'bony',
-      database: 'users',
+      database: 'user',
       entities: [__dirname + '/../**/*.entity.js'],
       synchronize: true
     }),
   ],
 })
+
 export class DatabaseModule {}

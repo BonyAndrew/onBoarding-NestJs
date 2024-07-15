@@ -32,21 +32,4 @@ export class UsersController {
   remove(@Param('id') id: number) {
     return this.usersService.remove(id);
   }
-
- 
-
-  // @Get('/me')
-  // async me(@Headers('authorization') token: string): Promise<any> {
-  //   if (!token) {
-  //     throw new UnauthorizedException('No token found.');
-  //   }
-  //   const cleanedToken = token.startsWith('Bearer ') ? token.slice(7) : token;
-  //   return this.usersService.getUserInfo(cleanedToken);
-  // }
-
-  
-  // me(@Req() req, user: User) {
-  //   const use = user.id;
-  //   return this.usersService.findOne(use);
-  // }
 }

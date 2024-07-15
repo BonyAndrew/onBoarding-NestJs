@@ -7,6 +7,9 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtModule } from '@nestjs/jwt';
 import { MailModule } from './mailer/mailer.module';
+import { Session } from 'express-session';
+import { PassportModule } from '@nestjs/passport';
+
 
 @Module({
   imports: [
@@ -21,6 +24,7 @@ import { MailModule } from './mailer/mailer.module';
     UsersModule,
     AuthModule,
     MailModule,
+    PassportModule.register({ defaultStrategy: 'local' }),
   ],
   controllers: [AppController],
   providers: [AppService,],
