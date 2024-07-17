@@ -1,5 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, BeforeInsert } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
+import { Role } from '../enums/role.enum';
 
 @Entity({ name: 'users' })
 export class User {
@@ -12,7 +13,9 @@ export class User {
   @Column('text')
   email: string;
 
-  @Column({ nullable: false })
+  @Column(
+    { nullable: false }
+  )
   password: string;
 
   @Column({ nullable: true }) 
@@ -26,6 +29,12 @@ export class User {
 
   @Column({ nullable: true })
   resetPasswordTokenExpiration: Date;
+
+  // @Column()
+  // profilePicture: string;
+
+  @Column({ type: 'enum', enum: Role, nullable: true })
+  roles: string;
 
   @BeforeInsert()
   async hashPassword() {

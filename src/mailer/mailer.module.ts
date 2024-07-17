@@ -20,7 +20,7 @@ import { UsersModule } from 'src/users/users.module';
         defaults: {
           from: '"AD Dev<🐒/" <contact@socecepme.com>',
         },
-      }),// autres options...
+      }),
     }),
     UsersModule
   ],

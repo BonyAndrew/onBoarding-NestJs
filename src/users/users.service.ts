@@ -93,14 +93,12 @@ export class UsersService {
 
     const user = new User();
     console.log('password', password);
-    console.log('ispassword', password == 'fils1soleil');
     const hashedPassword = await bcrypt.hash(password, 10);
     const token = this.jwtService.sign({ email }, { expiresIn: '1h' });
 
     user.name = name;
     user.email = email;
-    user.password = await bcrypt.hash(password, 10);
-    // user.password1 = await bcrypt.hash(password, 10);
+    user.password = password;
     user.token = token;
 
     console.log('user', name, 'is registered successfully');
@@ -113,14 +111,14 @@ export class UsersService {
     const user = await this.entityManager.findOne(User, { where: { email } })
     console.log('user ==', user)
 
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    console.log("mot de passe clair: ", isPasswordValid)
+    // const isPasswordValid = await bcrypt.compare(password, user.password);
+    // console.log("mot de passe clair: ", isPasswordValid)
 
     if (!user) {
       throw new UnauthorizedException("Wrong email");
     }
 
-    if (!isPasswordValid) {
+    if (!await bcrypt.compare(password, user.password)) {
       throw new UnauthorizedException("Wrong password!");
     }
 
@@ -310,7 +308,7 @@ export class UsersService {
   
       const isPasswordMatch = await bcrypt.compare(updatePasswordDto.oldPassword, utilisateur.password);
       console.log(isPasswordMatch);
-      if (isPasswordMatch) {
+      if (!isPasswordMatch) {
         throw new Error("Votre ancien mot de passe est erroné!");
       }
 
@@ -331,5 +329,5 @@ export class UsersService {
       console.error(error);
       throw new Error('Une erreur est survenue lors de la mise à jour du mot de passe');
     }
-  }//✅  
+  }//✅    
 }

@@ -1,8 +1,9 @@
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import * as session from 'express-session'
 import passport from 'passport';
+import { RolesGuard } from './autorization/roles.guard';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -24,8 +25,7 @@ async function bootstrap() {
       },
     }),
   )
-  // app.use(passport.initialize());
-  // app.use(passport.session());
+  // app.useGlobalGuards(new RolesGuard());
   await app.listen(3000);
 }
 bootstrap();

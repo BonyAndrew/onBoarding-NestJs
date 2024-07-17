@@ -1,19 +1,20 @@
-import { Controller, Post, UseGuards, Body, Req, Res, HttpStatus, Ip, Delete, Get, UnauthorizedException, BadRequestException, Param, NotFoundException, Session, HttpCode, HttpException } from '@nestjs/common';
+import { Controller, Post, UseGuards, Body, Req, Res, HttpStatus, Get, UnauthorizedException, BadRequestException, Param, NotFoundException, HttpException, Session, InternalServerErrorException } from '@nestjs/common';
 import { UsersService } from 'src/users/users.service';
 import { LoginUserDto } from 'src/users/dto/login-user.dto';
-import RefreshTokenDto from 'src/users/dto/refresh-token.dto';
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
-import { Request } from 'express';
 import { SignUpUserDto } from 'src/users/dto/signup-user.dto';
 import { UpdatePasswordDto } from 'src/users/dto/update-password.dto';
-import { JwtAuthGuard } from './jwt-auth.guard';
 import { User } from 'src/users/entities/user.entity';
-import { AuthGuard } from '@nestjs/passport';
 import * as bcrypt from 'bcrypt';
 import { ProfileDto } from 'src/users/dto/profile-user.dto';
+import { RolesGuard } from 'src/autorization/roles.guard';
+import { Request, response, Response } from 'express';
+import { LocalAuthGuard } from 'src/autorization/localAuth.guard';
+import { AuthGuard } from '@nestjs/passport';
 
 @Controller('auth')
+@UseGuards(RolesGuard)
 export class AuthController {
 
   constructor(
@@ -26,11 +27,24 @@ export class AuthController {
   async login(@Body() credentials: LoginUserDto) {
     console.log('credentials', credentials);
     try {
-      return this.userService.login(credentials);
+      await this.userService.login(credentials);
+      return (credentials.email, "is connected");
     } catch (e) {
       return new BadRequestException(e);
     }
+  }//✅
 
+  @UseGuards(LocalAuthGuard)
+  @Post('auth/login')
+  async ogin(@Req() req, @Session() session) {
+    const user = await this.authService.validateUser(req.body.email, req.body.password);
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+
+    session.user = req.user;
+    console.log(req.userEmail);
+    return req.user;
   }//✅
 
   @Post('register')
@@ -75,28 +89,57 @@ export class AuthController {
     }
   }//✅
 
+  // @Post('update-password/:id')
+  // async updatePassword(@Body() updatePasswordDto: UpdatePasswordDto, @Param('id') id) {
+  //   try {
+  //     const user = await this.userService.findOne(id);
+  //     if (!user) {
+  //       throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+  //     }
+  //     const isPasswordMatch = await bcrypt.compare(updatePasswordDto.oldPassword, user.password);
+  //     console.log("ancien mot de passe",isPasswordMatch);
+
+  //     if (!isPasswordMatch) {
+  //       throw new Error("Votre ancien mot de passe est erroné!");
+  //     }
+  //     await this.userService.updatePassword(id, updatePasswordDto);
+  //     return "votre mot de passe a été modifié!";
+  //   } catch (error) {
+  //     if (error instanceof HttpException) {
+  //       throw error;
+  //     }
+  //     console.error(error);
+  //     throw new HttpException('Une erreur s\'est produite lors de la mise à jour du mot de passe', HttpStatus.INTERNAL_SERVER_ERROR, error);
+  //   }
+  // }//✅
+
   @Post('update-password/:id')
-  async updatePassword(@Body() updatePasswordDto: UpdatePasswordDto, @Param('id') id) {
+  async updatePassword(@Body() updatePasswordDto: UpdatePasswordDto, @Param('id') id: string): Promise<string> {
+    const user = await this.userService.findOne(id);
+
+    // Vérifie si l'utilisateur existe
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    // Vérifie si l'ancien mot de passe correspond
+    const isPasswordMatch = await bcrypt.compare(updatePasswordDto.oldPassword, user.password);
+    console.log(user.password);
+    console.log(isPasswordMatch);
+
+    if (!isPasswordMatch) {
+      throw new BadRequestException('Votre ancien mot de passe est erroné!');
+    }
+
     try {
-      const user = await this.userService.findOne(id);
-      if (!user) {
-        throw new HttpException('User not found', HttpStatus.NOT_FOUND);
-      }
-      const isPasswordMatch = await bcrypt.compare(updatePasswordDto.oldPassword, user.password);
-      console.log(isPasswordMatch);
-      if (isPasswordMatch) {
-        throw new Error("Votre ancien mot de passe est erroné!");
-      }
       await this.userService.updatePassword(id, updatePasswordDto);
-      return "votre mot de passe a été modifié!";
+      return 'Votre mot de passe a été modifié!';
     } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
       console.error(error);
-      throw new HttpException('Une erreur s\'est produite lors de la mise à jour du mot de passe', HttpStatus.INTERNAL_SERVER_ERROR, error);
+      throw new InternalServerErrorException('Une erreur s\'est produite lors de la mise à jour du mot de passe');
     }
   }//✅
+
 
   @Post('forgot-password')
   async forgotPassword(@Body('email') email: string, @Res() res) {
@@ -153,15 +196,14 @@ export class AuthController {
     }
   }//✅
 
-  @Post('logout')
-  async logout(@Req() req) {
-    // Ici, vous pouvez ajouter de la logique supplémentaire, par exemple pour logger un événement de déconnexion ou invalider un token de rafraîchissement.
-    req.logout();
-    return { message: 'Déconnexion réussie' };
-  }
+  // @Post('logout')
+  // async logout(@Req() req) {
+  //   req.logout();
+  //   return { message: 'Déconnexion réussie' };
+  // }//✅
 
   @UseGuards()
-  @Get('profile')
+  @Get('profile-tk')
   async profile(@Req() req: Request) {
 
     const authHeader = req.headers['authorization'];
@@ -197,6 +239,38 @@ export class AuthController {
     }
 
     return { user };
-
   }//✅
+
+  @Get('profile')
+  @UseGuards(LocalAuthGuard)
+  async getProfile(@Req() req: Request, @Res() response: Response) {
+    // const user = await this.authService.getUserById(req.session.user.id);
+    const user = await this.authService.getUserById(req.session.user);
+    console.log("uuu", user);
+    if (!user) {
+      return response.status(404).send();
+    }
+    return response.json(user);
+  }//✅❌
+
+  // @Post('logout')
+  @Get('logout')
+  async logout(@Req() req: Request, @Res() res: Response): Promise<void> {
+    req.session.destroy((err) => {
+      if (err) {
+        console.log('Erreur:', err);
+      }
+      res.clearCookie('connect.sid');
+      // res.redirect('./'); 
+    });
+  }//✅
+
+  @Get('check-session')
+  checkSession(@Session() session) {
+    if (session && session.user) {
+      return { status: 'La session est ouverte' };
+    } else {
+      return { status: 'Aucune session ouverte' };
+    }
+  }
 }
