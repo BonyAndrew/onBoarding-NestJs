@@ -11,7 +11,6 @@ import { AuthService } from "src/auth/auth.service";
 import { RolesService } from "src/roles/roles.service";
 
 @Controller('users')
-// @UseGuards(JwtAuthGuard, RolesGuard)
 export class UsersController {
   constructor(
     private readonly usersService: UsersService,
@@ -30,7 +29,6 @@ export class UsersController {
   }
 
   @Post()
-  // @Roles()
   create(@Body() createUserDto: CreateUserDto): Promise<User[]> {
     return this.usersService.create(createUserDto);
   }
