@@ -1,8 +1,8 @@
-import { Entity, PrimaryGeneratedColumn, Column, BeforeInsert } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, BeforeInsert, ManyToMany, JoinTable, ManyToOne, JoinColumn } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
-import { Role } from '../enums/role.enum';
+import { Role } from 'src/roles/entities/role.entity';
 
-@Entity({ name: 'users' })
+@Entity({ name: 'users' }) 
 export class User {
   @PrimaryGeneratedColumn()
   id: number;
@@ -30,14 +30,12 @@ export class User {
   @Column({ nullable: true })
   resetPasswordTokenExpiration: Date;
 
-  // @Column()
-  // profilePicture: string;
-
-  @Column({ type: 'enum', enum: Role, nullable: true })
-  roles: string;
-
   @BeforeInsert()
   async hashPassword() {
     this.password = await bcrypt.hash(this.password, 10);
   }
+
+  @ManyToOne(() => Role, role => role.users)
+  @JoinColumn({ name: 'idRole' })
+  role: Role;
 }

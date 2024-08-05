@@ -1,7 +1,7 @@
 import { BadRequestException, GoneException, HttpException, HttpStatus, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { EntityManager, FindOneOptions, FindOptionsWhere, MoreThanOrEqual } from 'typeorm';
+import { FindOneOptions, FindOptionsWhere, MoreThanOrEqual, Repository } from 'typeorm';
 import { User } from './entities/user.entity';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getRepositoryToken, InjectRepository } from '@nestjs/typeorm';
 import { UpdateUserDto } from './dto/update-user.dto';
 import * as bcrypt from 'bcrypt';
 import { LoginUserDto } from './dto/login-user.dto';
@@ -12,6 +12,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { MailerService } from '@nestjs-modules/mailer';
 import { UpdatePasswordDto } from './dto/update-password.dto';
 import { ProfileDto } from './dto/profile-user.dto';
+import { CreateUserDto } from './dto/create-user.dto';
+import { Role } from 'src/roles/entities/role.entity';
+import { RolesService } from 'src/roles/roles.service';
+import { access } from 'fs';
 
 
 @Injectable()
@@ -20,22 +24,32 @@ export class UsersService {
   private refreshTokens: RefreshToken[] = [];
 
   constructor(
-    private readonly entityManager: EntityManager,
     private jwtService: JwtService,
-    private readonly mailerService: MailerService
+    private readonly mailerService: MailerService,
+    @InjectRepository(Role)
+    private roleRepository: Repository<Role>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>
   ) { }
+
+  async save(user: User): Promise<User> {
+    return this.userRepository.save(user);
+  }
 
   async getAll() {
     return getRepositoryToken(User);
   }//✅
 
   async findAllUsers(): Promise<User[]> {
-    return await this.entityManager.find(User);
+    return await this.userRepository.find();
   }//✅
 
+  // async findAll(): Promise<User[]> {
+  //   return await this.userRepository.find(User);
+  // }//✅
   async findAll(): Promise<User[]> {
-    return await this.entityManager.find(User);
-  }//✅
+    return this.userRepository.find({ relations: ['role', 'permissions'] });
+  }
 
   async findOne(id): Promise<User> {
     const options: FindOneOptions<User> = {
@@ -44,14 +58,22 @@ export class UsersService {
       } as FindOptionsWhere<User>,
     };
     if (!options) {
-      console.log('aucun trouvé');
       throw new NotFoundException();
     }
-    return await this.entityManager.findOne(User, options);
+    return await this.userRepository.findOne(options);
   }//✅
 
-  async create(user): Promise<User> {
-    return await this.entityManager.create(user);
+  async create(user): Promise<User[]> {
+    return await this.userRepository.save(user);
+  }//✅
+
+  async createU(createUserDto: CreateUserDto): Promise<User> {
+    const userC = new User();
+    userC.name = createUserDto.name;
+    userC.email = createUserDto.email;
+    userC.password =createUserDto.password;
+    
+    return this.userRepository.save(userC);
   }//✅
 
   async createUser(user: User): Promise<User> {
@@ -60,18 +82,19 @@ export class UsersService {
     userN.email = user.email;
     userN.password = user.password;
     userN.token = user.token;
-    return await this.entityManager.save(userN);
+    // userN.roles = user.roles;
+    return await this.userRepository.save(userN);
   }//✅
 
-  async update(email, updateUserDto: UpdateUserDto) {
-    const userU = await this.findByEmail(email);
+  async update(id, updateUserDto: UpdateUserDto) {
+    const userU = await this.findOne(id);
     if (!userU) {
       throw new NotFoundException();
     }
 
     Object.assign(userU, updateUserDto);
 
-    return await this.entityManager.save(userU);
+    return await this.userRepository.save(userU);
   }//✅
 
   async remove(id: number) {
@@ -80,68 +103,84 @@ export class UsersService {
       throw new NotFoundException();
     }
 
-    return await this.entityManager.remove(user);
+    return await this.userRepository.remove(user);
   }//✅
 
-  async register(id, name: string, email: string, password: string) {
+  async register(name: string, email: string, password: string ) {
 
-    const emailInUse = await this.entityManager.findOne(User, { where: { email } });
+    const emailInUse = await this.userRepository.findOne({ where: { email } });
 
-    if (emailInUse) {
-      throw new BadRequestException('This email is already used');
-    }
+    // if (emailInUse) {
+    //   throw new BadRequestException('This email is already used');
+    // }
 
     const user = new User();
-    console.log('password', password);
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const token = this.jwtService.sign({ email }, { expiresIn: '1h' });
+    const payload = { 
+      name: name, 
+      email: email,
+    };
+    const token = this.jwtService.sign({ payload }, { expiresIn: '24h' });
 
     user.name = name;
     user.email = email;
     user.password = password;
     user.token = token;
 
-    console.log('user', name, 'is registered successfully');
-    return this.entityManager.save(user);
+    console.log(user)
+    return await this.userRepository.save(user);
   }//✅ 
-
+ 
   async login(credentials: LoginUserDto) {
     const { email, password } = credentials;
 
-    const user = await this.entityManager.findOne(User, { where: { email } })
-    console.log('user ==', user)
-
-    // const isPasswordValid = await bcrypt.compare(password, user.password);
-    // console.log("mot de passe clair: ", isPasswordValid)
-
+    const user = await this.userRepository.findOne({ where: { email }, relations: ['role'], });
+    const role = await this.roleRepository.findOne({ where: { id: user.role.id }, relations: [ 'permissions' ], });
+    
     if (!user) {
       throw new UnauthorizedException("Wrong email");
+    }
+
+    if (user.isValidated === false) {
+      throw new BadRequestException("Your account is not validated");
     }
 
     if (!await bcrypt.compare(password, user.password)) {
       throw new UnauthorizedException("Wrong password!");
     }
+    console.log('debut');
+    
+    const payload = { 
+      username: user.name, 
+      sub: user.id,
+      email: email,
+      role: user.role,
+      permission: role.permissions
+    };
 
-    console.log('User', user.name, 'connected');
-    return { user: user }
+    const access_token = this.jwtService.sign(payload);
+
+    console.log('fin', access_token); 
+    return {access_token, user: user}
+    
+
   }//✅
 
   async updateUserProfile(profilDto: ProfileDto): Promise<User> {
-    const user = await this.entityManager.findOne(User, { where: { id: profilDto.id } });
+    const user = await this.userRepository.findOne({ where: { id: profilDto.id } });
     if (!user) { throw new HttpException('user not found', HttpStatus.NOT_FOUND); }
 
     if (profilDto.emailU) { user.email = profilDto.emailU; }
     if (profilDto.name) { user.name = profilDto.name; }
     if (profilDto.password) { user.password = profilDto.password }
 
-    await this.entityManager.save(user);
+    await this.userRepository.save(user);
     return user;
   }//✅
 
   async generateUserToken(id) {
-    const accessToken = this.jwtService.sign({ id }, { expiresIn: '1h' });
+    const accessToken = this.jwtService.sign({ id }, { expiresIn: '24h' });
     const refreshToken = uuidv4();
-    const user = this.entityManager.findOne(User, { where: { id } });
+    const user = this.userRepository.findOne({ where: { id } });
 
     return {
       accessToken,
@@ -158,7 +197,7 @@ export class UsersService {
       userId: refreshToken.userId,
     }
 
-    return sign(accessToken, process.env.JWT_SECRET, { expiresIn: '1h' });
+    return sign(accessToken, process.env.JWT_SECRET, { expiresIn: '24h' });
   }//✅
 
   private retieveRefreshToken(
@@ -204,7 +243,7 @@ export class UsersService {
   async getUserDetails(id: number): Promise<any> {
     try {
       // const id = parseInt(id);
-      const user = await this.entityManager.findOne(User, { where: { id } });
+      const user = await this.userRepository.findOne({ where: { id } });
       if (!user) {
         throw new UnauthorizedException("No user with this id");
       }
@@ -221,24 +260,102 @@ export class UsersService {
     const mailOptions = {
       to: email,
       subject: 'Validate your account by click on the link',
-      text: `Hello ${name}, please click on this link to validate your account: ${encodedLink}`,
+      html: `<html>
+                <head>
+                    <style>
+                        body {
+                            font-family: Arial, sans-serif;
+                            margin: 20px;
+                            padding: 28px 0px;
+                            background-color: #f6f6f6;
+                        }
+                        .main-container {
+                          margin: 20px;
+                          padding: 28px 0px;
+                          background-color: #f6f6f6;
+                        }
+                        .email-container {
+                            width: 80%;
+                            max-width: 600px;
+                            margin: 0 auto;
+                            padding: 20px;
+                            background-color: #ffffff;
+                            box-shadow: 0px 0px 10px 10px rgba(113, 6, 6, 0.1);
+                            border-radius: 15px;
+                        }
+                        .email-header {
+                            text-align: center;
+                            padding-bottom: 20px;
+                        }
+                        .email-header h2{
+                            color: #3498db;
+                        }
+                        .email-body {
+                            font-size: 16px;
+                            line-height: 1.5;
+                            color: #333333;
+                        }
+                        .email-footer {
+                            padding-top: 15px;
+                            color: #888888;
+                            font-size: 14px;
+                        }
+                        a[href] {
+                            color: #fcfdfe;
+                        }
+                        
+                        .button {
+                            display: inline-block;
+                            color: #ffffff;
+                            background-color: #3498db;
+                            padding: 10px 20px;
+                            text-decoration: none;
+                            border-radius: 15px;
+                            cursor: pointer;
+                            transition: background-color 0.5s ease;
+                        }
+                        .button:hover {
+                              background-color: #719ff4;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="main-container">
+                      <div class="email-container">
+                          <div class="email-header">
+                              <h2>Bienvenue sur ${process.env.APP_NAME}!</h2>
+                          </div>
+                          <div class="email-body"> 
+                              <p>Bonjour,</p>
+                              <p>Merci de vous être inscrit sur ---. Veuillez cliquer sur le bouton ci-dessous pour valider votre compte :</p>
+                              <p style="text-align: center;"><a href="${encodedLink}" class="button">Valider mon compte</a></p>
+                              <p>Si vous n'avez pas créé de compte sur ${process.env.APP_NAME}, veuillez ignorer cet email.</p>
+                          </div>
+                          <div class="email-footer">
+                              <p>Cordialement,</p>
+                              <p>L'équipe de ${process.env.APP_NAME}</p>
+                          </div>
+                      </div>
+                    </div>
+                </body>
+              </html>`
     };
 
     await this.mailerService.sendMail(mailOptions);
   }//✅
 
   async findByEmail(email: string): Promise<User> {
-    return this.entityManager.findOne(User, { where: { email } });
+    return this.userRepository.findOne({ where: { email } });
   }//✅
 
   async generateResetPasswordToken(user: User): Promise<string> {
     const payload = { userId: user.id };
     const token = await this.jwtService.signAsync(payload, {
-      expiresIn: '1h',
+      expiresIn: '24h',
     });
     user.resetPasswordToken = token;
     user.resetPasswordTokenExpiration = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes from now
-    await this.entityManager.save(user);
+    await this.userRepository.save(user);
     return token;
   }//✅
 
@@ -247,7 +364,7 @@ export class UsersService {
     if (!decoded) {
       return null;
     }
-    const user = await this.entityManager.findOne(User, {
+    const user = await this.userRepository.findOne({
       where: {
         resetPasswordToken: token,
         resetPasswordTokenExpiration: MoreThanOrEqual(new Date())
@@ -263,7 +380,7 @@ export class UsersService {
     user.password = await bcrypt.hash(newPassword, 10);
     user.resetPasswordToken = null;
     user.resetPasswordTokenExpiration = null;
-    await this.entityManager.save(user);
+    await this.userRepository.save(user);
   }//✅
 
   async sendResetPasswordEmail(user: User) {
@@ -301,13 +418,12 @@ export class UsersService {
   async updatePassword(id, updatePasswordDto: UpdatePasswordDto) {
     try {
       // Trouver l'utilisateur par son ID
-      const utilisateur = await this.entityManager.findOne(User, { where: { id } });
+      const utilisateur = await this.userRepository.findOne({ where: { id } });
       if (!utilisateur) {
         throw new Error('Utilisateur introuvable');
       }
-  
+
       const isPasswordMatch = await bcrypt.compare(updatePasswordDto.oldPassword, utilisateur.password);
-      console.log(isPasswordMatch);
       if (!isPasswordMatch) {
         throw new Error("Votre ancien mot de passe est erroné!");
       }
@@ -315,19 +431,38 @@ export class UsersService {
       if (updatePasswordDto.newPassword !== updatePasswordDto.confirmNewPassword) {
         throw new HttpException("Les nouveaux mots de passe ne correspondent pas", HttpStatus.BAD_REQUEST);
       }
-  
+
       const saltRounds = 10;
       const hashedPassword = await bcrypt.hash(updatePasswordDto.newPassword, saltRounds);
 
       updatePasswordDto.newPassword = hashedPassword;
-  
+
       utilisateur.password = updatePasswordDto.newPassword;
-      await this.entityManager.save(utilisateur);
-  
+      await this.userRepository.save(utilisateur);
+
       return "utilisateur enregistré avec succès";
     } catch (error) {
-      console.error(error);
       throw new Error('Une erreur est survenue lors de la mise à jour du mot de passe');
     }
   }//✅    
+
+  async assignRoleToUser(userId: number, roleId: number): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    const role = await this.roleRepository.findOne({ where: { id: roleId } });
+
+    if (!user || !role) {
+      throw new NotFoundException('User or Role not found');
+    }
+
+    user.role = role;
+    return this.userRepository.save(user);
+  }
+
+  async getUserWithPermissions(userId: number): Promise<User> {
+    return this.userRepository.createQueryBuilder('user')
+      .leftJoinAndSelect('user.role', 'role')
+      .leftJoinAndSelect('role.permissions', 'permissions')
+      .where('user.id = :id', { id: userId })
+      .getOne();
+  }
 }

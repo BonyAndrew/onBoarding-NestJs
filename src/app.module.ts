@@ -9,9 +9,20 @@ import { JwtModule } from '@nestjs/jwt';
 import { MailModule } from './mailer/mailer.module';
 import { PassportModule } from '@nestjs/passport';
 import { ClientsModule, Transport } from '@nestjs/microservices';
-import { RolesGuard } from './autorization/roles.guard';
-// import { MessageResolver } from './message/message.resolver';
-
+import { ProductsModule } from './products/products.module';
+import { RolesModule } from './roles/roles.module';
+import { PermissionsController } from './permissions/permissions.controller';
+import { PermissionsService } from './permissions/permissions.service';
+import { PermissionsModule } from './permissions/permissions.module';
+import { RolesGuard } from './guards/role.guard';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { RolesService } from './roles/roles.service';
+import { AuthService } from './auth/auth.service';
+import { JwtStrategy } from './strategies/jwt.strategy';
+import { PermissionGuard } from './guards/permission.guard';
+import { User } from './users/entities/user.entity';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthGuard } from './guards/auth.guard';
 
 @Module({
   imports: [
@@ -38,15 +49,24 @@ import { RolesGuard } from './autorization/roles.guard';
       }
 
     ]),
+    ProductsModule,
+    RolesModule,
+    PermissionsModule,
+    TypeOrmModule.forFeature([User]),
   ],
-  controllers: [AppController],
+  controllers: [AppController, PermissionsController],
   providers: [
-    AppService, 
-    // MessageResolver
-    {
-      provide: "APP_GUARD",
-      useClass: RolesGuard,
-    },
+    AppService,
+    PermissionsService,
+    AuthGuard,
+    PermissionGuard,
+    RolesGuard,
+    JwtAuthGuard,
+    RolesService,
+    AuthService,
+    JwtStrategy,
+    JwtModule,
   ],
+  exports: [JwtModule]
 })
 export class AppModule { }

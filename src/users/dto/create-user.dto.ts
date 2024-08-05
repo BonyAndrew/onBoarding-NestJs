@@ -11,13 +11,16 @@ export class CreateUserDto {
     @IsNotEmpty()
     email: string;
 
-    @IsString()
-    address: string;
+    // @IsString()
+    // address: string;
+
+    // @IsString()
+    // role: string;
 
     @IsString()
     @IsNotEmpty()
-    @MinLength(8)
-    @Matches(/^(^=.*[0-9][A-Z])/)
+    // @MinLength(8)
+    // @Matches(/[0-9][A-Z]/)
     password: string;
 }
 

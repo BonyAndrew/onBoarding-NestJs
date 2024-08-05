@@ -6,6 +6,8 @@ import { User } from 'src/users/entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import { RolesService } from 'src/roles/roles.service';
+import { Role } from 'src/roles/entities/role.entity';
 
 @Injectable()
 export class AuthService {
@@ -13,33 +15,13 @@ export class AuthService {
         private jwtService: JwtService,
         private usersService: UsersService,
         private mailerService: MailerService,
+        private roleService: RolesService,
+        @InjectRepository(User)
+    private userRepository: Repository<User>,
     ) { }
-
-    async generateResetPasswordToken(user: User): Promise<string> {
-        const payload = { userId: user.id, email: user.email };
-        const token = await this.jwtService.signAsync(payload);
-        return token;
-    }
-
-    async sendResetPasswordEmail(email: string, token: string) {
-        const resetLink = `http://localhost:3000/auth/reset-password?token=${token}`;
-    }
-
-    async resetPassword(token: string, newPassword: string): Promise<void> {
-        try {
-            const decoded = this.jwtService.verify(token, {
-                secret: process.env.JWT_RESET_PASSWORD_SECRET,
-            });
-            const email = decoded.email;
-        } catch (error) {
-            throw new Error('Invalid or expired reset token');
-        }
-    }
-
     async validateUser(email, password): Promise<User> {
-        const user = await this.usersService.findByEmail(email);
-        console.log('user info', user);
-        
+        const user = await this.userRepository.findOne({where: {email}});
+
         if (user && await bcrypt.compare(password, user.password)) {
             return user;
         }
@@ -50,4 +32,9 @@ export class AuthService {
         // const id1 = parseInt(id);
         return this.usersService.findOne(id);
     } //✅
+
+    async userHasPermission(userId: number, permissionName: string): Promise<boolean> {
+        const user = await this.usersService.getUserWithPermissions(userId);
+        return user.role.permissions.some(permission => permission.name === permissionName);
+    }
 }

@@ -8,13 +8,13 @@ import { UpdatePasswordDto } from 'src/users/dto/update-password.dto';
 import { User } from 'src/users/entities/user.entity';
 import * as bcrypt from 'bcrypt';
 import { ProfileDto } from 'src/users/dto/profile-user.dto';
-import { RolesGuard } from 'src/autorization/roles.guard';
 import { Request, response, Response } from 'express';
-import { LocalAuthGuard } from 'src/autorization/localAuth.guard';
+import { LocalAuthGuard } from 'src/guards/localAuth.guard';
 import { AuthGuard } from '@nestjs/passport';
+import { Role } from 'src/roles/entities/role.entity';
+import { permission } from 'process';
 
 @Controller('auth')
-@UseGuards(RolesGuard)
 export class AuthController {
 
   constructor(
@@ -24,37 +24,67 @@ export class AuthController {
   ) { }
 
   @Post('login')
-  async login(@Body() credentials: LoginUserDto) {
-    console.log('credentials', credentials);
+  async login(@Body() credentials: LoginUserDto, @Req() req, @Session() session) {
     try {
-      await this.userService.login(credentials);
-      return (credentials.email, "is connected");
+      await this.userService.login(req.body);
+  
+      return {
+        user: session.user,
+      };
     } catch (e) {
       return new BadRequestException(e);
     }
   }//✅
-
+  
   @UseGuards(LocalAuthGuard)
   @Post('auth/login')
-  async ogin(@Req() req, @Session() session) {
-    const user = await this.authService.validateUser(req.body.email, req.body.password);
+  async signIn(@Req() req, @Session() session) {
+    const { email, password } = req.body;
+    
+    const user = await this.userService.findByEmail(email);  
+
     if (!user) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('Invalid credentials');
     }
 
-    session.user = req.user;
-    console.log(req.userEmail);
-    return req.user;
-  }//✅
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Wrong password!');
+    }
+
+    if (!user.isValidated) {
+      throw new BadRequestException('Your account is not validated');
+    }
+
+    const payload = {
+      sub: user.id,
+      username: user.name,
+      email: user.email,
+      role: user.role
+    };
+    const accessToken = this.jwtService.sign({ payload });
+
+    session.user = {
+      id: user.id,
+      name: user.name,
+      role: user.role,
+    };
+
+    return {
+      accessToken,
+      user: session.user,
+      payload
+    };
+  }
 
   @Post('register')
-  async register(@Body() body: SignUpUserDto, id) {
+  async register(@Body() body: SignUpUserDto) {
     const { name, email, password } = body;
 
     try {
-      const newUser = await this.userService.register(id, name, email, password);
-      await this.userService.sendValidationEmail(newUser.token, name, newUser.email);
-      return ("enregistré avec succès");
+      const newUser = await this.userService.register(name, email, password);
+      await this.userService.sendValidationEmail(newUser.token, name, email);
+      return newUser.token;
     } catch (error) {
       if (error instanceof BadRequestException) {
         throw new BadRequestException(error);
@@ -62,11 +92,11 @@ export class AuthController {
     }
   }//✅
 
-  @Post('update-profile')
+  @Post('update-profile/:id')
   @UseGuards()
-  async updateUserProfile(@Body() profilDto: ProfileDto): Promise<User> {
+  async updateUserProfile(@Param('id') id: string, @Body() profilDto: ProfileDto): Promise<User> {
     try {
-      const user = await this.userService.findByEmail(profilDto.emailU);
+      const user = await this.userService.findOne(id);
 
       if (!user) {
         throw new HttpException('User not found', HttpStatus.NOT_FOUND);
@@ -74,9 +104,6 @@ export class AuthController {
 
       if (profilDto.emailU) { user.email = profilDto.emailU; }
       if (profilDto.name) { user.name = profilDto.name; }
-      if (profilDto.password) {
-        user.password = await this.userService.hashPassword(profilDto.password);
-      }
 
       const updatedUser = await this.userService.update(user.email, user);
       return updatedUser;
@@ -84,34 +111,11 @@ export class AuthController {
       if (error instanceof HttpException) {
         throw error;
       } else {
-        throw new HttpException('Internal server error', HttpStatus.INTERNAL_SERVER_ERROR);
+        console.log(error)
+        throw new HttpException('non', HttpStatus.INTERNAL_SERVER_ERROR);
       }
     }
   }//✅
-
-  // @Post('update-password/:id')
-  // async updatePassword(@Body() updatePasswordDto: UpdatePasswordDto, @Param('id') id) {
-  //   try {
-  //     const user = await this.userService.findOne(id);
-  //     if (!user) {
-  //       throw new HttpException('User not found', HttpStatus.NOT_FOUND);
-  //     }
-  //     const isPasswordMatch = await bcrypt.compare(updatePasswordDto.oldPassword, user.password);
-  //     console.log("ancien mot de passe",isPasswordMatch);
-
-  //     if (!isPasswordMatch) {
-  //       throw new Error("Votre ancien mot de passe est erroné!");
-  //     }
-  //     await this.userService.updatePassword(id, updatePasswordDto);
-  //     return "votre mot de passe a été modifié!";
-  //   } catch (error) {
-  //     if (error instanceof HttpException) {
-  //       throw error;
-  //     }
-  //     console.error(error);
-  //     throw new HttpException('Une erreur s\'est produite lors de la mise à jour du mot de passe', HttpStatus.INTERNAL_SERVER_ERROR, error);
-  //   }
-  // }//✅
 
   @Post('update-password/:id')
   async updatePassword(@Body() updatePasswordDto: UpdatePasswordDto, @Param('id') id: string): Promise<string> {
@@ -139,7 +143,6 @@ export class AuthController {
       throw new InternalServerErrorException('Une erreur s\'est produite lors de la mise à jour du mot de passe');
     }
   }//✅
-
 
   @Post('forgot-password')
   async forgotPassword(@Body('email') email: string, @Res() res) {
@@ -195,13 +198,7 @@ export class AuthController {
       }
     }
   }//✅
-
-  // @Post('logout')
-  // async logout(@Req() req) {
-  //   req.logout();
-  //   return { message: 'Déconnexion réussie' };
-  // }//✅
-
+  
   @UseGuards()
   @Get('profile-tk')
   async profile(@Req() req: Request) {
@@ -222,9 +219,11 @@ export class AuthController {
 
   @Get('verify/:token')
   async verifyEmail(@Param('token') token: string) {
-    console.log('token: ', token);
 
-    const decoded = await this.jwtService.verify(token);
+    const decoded = await this.jwtService.verifyAsync(token);
+    if (!decoded) {
+      return null;
+    }
 
     const userEmail = decoded.email;
     const user = await this.userService.findByEmail(userEmail);
@@ -246,14 +245,13 @@ export class AuthController {
   async getProfile(@Req() req: Request, @Res() response: Response) {
     // const user = await this.authService.getUserById(req.session.user.id);
     const user = await this.authService.getUserById(req.session.user);
-    console.log("uuu", user);
+    console.log("user :", user);
     if (!user) {
       return response.status(404).send();
     }
     return response.json(user);
   }//✅❌
 
-  // @Post('logout')
   @Get('logout')
   async logout(@Req() req: Request, @Res() res: Response): Promise<void> {
     req.session.destroy((err) => {
@@ -261,16 +259,16 @@ export class AuthController {
         console.log('Erreur:', err);
       }
       res.clearCookie('connect.sid');
-      // res.redirect('./'); 
+      // res.redirect(''); 
     });
   }//✅
 
-  @Get('check-session')
-  checkSession(@Session() session) {
-    if (session && session.user) {
-      return { status: 'La session est ouverte' };
-    } else {
-      return { status: 'Aucune session ouverte' };
-    }
-  }
+  // @Get('check-session')
+  // checkSession(@Session() session) {
+  //   if (session && session.user) {
+  //     return { status: 'La session est ouverte' };
+  //   } else {
+  //     return { status: 'Aucune session ouverte' };
+  //   }
+  // }//❌
 }
